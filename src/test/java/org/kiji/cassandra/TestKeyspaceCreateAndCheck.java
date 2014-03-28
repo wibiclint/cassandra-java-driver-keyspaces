@@ -51,9 +51,25 @@ public class TestKeyspaceCreateAndCheck {
     Assert.assertNotNull(mCassandraCluster.getMetadata().getKeyspace(KEYSPACE));
   }
 
-  /** This fails with both versions of the driver. */
+  /**
+   * Create an upper-case keyspace and then try to retrieve with the lower-case name.  Fails with
+   * both versions of the driver.
+   */
   @Test
-  public void testKeyspacesDistinct() throws Exception {
+  public void testKeyspacesCreateUpperCheckLower() throws Exception {
+    final String KEYSPACE_LOWER = "mykeyspace";
+    final String KEYSPACE_UPPER = "MYKEYSPACE";
+    createKeyspace(KEYSPACE_UPPER);
+    Assert.assertNotNull(mCassandraCluster.getMetadata().getKeyspace(KEYSPACE_UPPER));
+    Assert.assertNull(mCassandraCluster.getMetadata().getKeyspace(KEYSPACE_LOWER));
+  }
+
+  /**
+   * Create a lower-case keyspace and then try to retrieve with the upper-case name.  Fails with
+   * both versions of the driver.
+   */
+  @Test
+  public void testKeyspacesCreateLowerCheckUpper() throws Exception {
     final String KEYSPACE_LOWER = "mykeyspace";
     final String KEYSPACE_UPPER = "MYKEYSPACE";
     createKeyspace(KEYSPACE_LOWER);
@@ -63,7 +79,7 @@ public class TestKeyspaceCreateAndCheck {
 
   /** A little bit more worrying! */
   @Test
-  public void testKeyspacesDistinct2() throws Exception {
+  public void testKeyspacesDistinct() throws Exception {
     final String KEYSPACE_LOWER = "mykeyspace";
     final String KEYSPACE_UPPER = "MYKEYSPACE";
     createKeyspace(KEYSPACE_LOWER);
@@ -72,6 +88,39 @@ public class TestKeyspaceCreateAndCheck {
         mCassandraCluster.getMetadata().getKeyspace(KEYSPACE_LOWER),
         mCassandraCluster.getMetadata().getKeyspace(KEYSPACE_UPPER)
     );
+  }
+
+  /** Check what actually gets created. */
+  @Test
+  public void testKeyspacesActuallyCreated() throws Exception {
+    final String KEYSPACE_LOWER = "mykeyspace";
+    final String KEYSPACE_UPPER = "MYKEYSPACE";
+    createKeyspace(KEYSPACE_LOWER);
+    assert(keyspaceExists(KEYSPACE_LOWER));
+    createKeyspace(KEYSPACE_UPPER);
+    assert(keyspaceExists(KEYSPACE_UPPER));
+
+  }
+
+  private boolean keyspaceExists(String keyspace) {
+    final Metadata metadata = mCassandraCluster.getMetadata();
+    Preconditions.checkNotNull(metadata);
+
+    LOG.debug("Found these keyspaces:");
+    boolean found = false;
+
+    for (KeyspaceMetadata ksm : metadata.getKeyspaces()) {
+      LOG.debug(String.format("\t%s", ksm.getName()));
+
+      // Sanity check whether the keyspace we are looking for exists.
+      if (ksm.getName().equals(keyspace)) {
+        LOG.debug("Looks like we found it!");
+        Preconditions.checkState(!found);
+        found = true;
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
