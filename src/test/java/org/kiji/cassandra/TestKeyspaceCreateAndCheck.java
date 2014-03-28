@@ -18,7 +18,11 @@ import java.util.List;
 public class TestKeyspaceCreateAndCheck {
   private static final Logger LOG = LoggerFactory.getLogger(TestKeyspaceCreateAndCheck.class);
 
-  private static Cluster mCassandraCluster = null;
+  private Cluster mCassandraCluster = null;
+
+  private static String KEYSPACE_LOWER = "\"mykeyspace\"";
+  private static String KEYSPACE_UPPER = "\"myKeyspace\"";
+  private static String TABLE_UPPER = "\"myTable\"";
 
   /**
    * Utility class to create a keyspace.
@@ -27,9 +31,7 @@ public class TestKeyspaceCreateAndCheck {
   private void createKeyspace(String keyspace) {
     Session session = mCassandraCluster.connect();
 
-    String keyspaceWithQuotes = "\"" + keyspace + "\"";
-
-    String queryText = "CREATE KEYSPACE IF NOT EXISTS " + keyspaceWithQuotes +
+    String queryText = "CREATE KEYSPACE IF NOT EXISTS " + keyspace +
         " WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor': 1}";
 
     session.execute(queryText);
@@ -38,17 +40,40 @@ public class TestKeyspaceCreateAndCheck {
   /** Pretty basic sanity test. */
   @Test
   public void testBasicKeyspaceCreation() throws Exception {
-    final String KEYSPACE = "all_lowercase_name";
-    createKeyspace(KEYSPACE);
-    Assert.assertNotNull(mCassandraCluster.getMetadata().getKeyspace(KEYSPACE));
+    createKeyspace(KEYSPACE_LOWER);
+    Assert.assertNotNull(mCassandraCluster.getMetadata().getKeyspace(KEYSPACE_LOWER));
+  }
+
+  /** Check building a table as well. */
+  @Test
+  public void testBasicKeyspaceAndTableCreation() throws Exception {
+    // Create the keyspace.
+    createKeyspace(KEYSPACE_UPPER);
+    Assert.assertNotNull(mCassandraCluster.getMetadata().getKeyspace(KEYSPACE_UPPER));
+
+    // Now create the table.
+    Session session = mCassandraCluster.connect();
+    String queryText = String.format(
+        "CREATE TABLE %s.%s (mykey text, myvalue text, PRIMARY KEY (mykey));",
+        KEYSPACE_UPPER,
+        TABLE_UPPER
+    );
+    session.execute(queryText);
+
+    // Now check that the table exists.
+    KeyspaceMetadata keyspaceMetadata = mCassandraCluster.getMetadata().getKeyspace(KEYSPACE_UPPER);
+    Assert.assertNotNull(keyspaceMetadata);
+
+    for (TableMetadata tableMetadata : keyspaceMetadata.getTables()) {
+      LOG.info(tableMetadata.getName());
+    }
   }
 
   /** Same sanity test, but with camel case. */
   @Test
   public void testCamelCaseKeyspaceCreation() throws Exception {
-    final String KEYSPACE = "camelCaseName";
-    createKeyspace(KEYSPACE);
-    Assert.assertNotNull(mCassandraCluster.getMetadata().getKeyspace(KEYSPACE));
+    createKeyspace(KEYSPACE_UPPER);
+    Assert.assertNotNull(mCassandraCluster.getMetadata().getKeyspace(KEYSPACE_UPPER));
   }
 
   /**
@@ -57,8 +82,6 @@ public class TestKeyspaceCreateAndCheck {
    */
   @Test
   public void testKeyspacesCreateUpperCheckLower() throws Exception {
-    final String KEYSPACE_LOWER = "mykeyspace";
-    final String KEYSPACE_UPPER = "MYKEYSPACE";
     createKeyspace(KEYSPACE_UPPER);
     Assert.assertNotNull(mCassandraCluster.getMetadata().getKeyspace(KEYSPACE_UPPER));
     Assert.assertNull(mCassandraCluster.getMetadata().getKeyspace(KEYSPACE_LOWER));
@@ -70,8 +93,6 @@ public class TestKeyspaceCreateAndCheck {
    */
   @Test
   public void testKeyspacesCreateLowerCheckUpper() throws Exception {
-    final String KEYSPACE_LOWER = "mykeyspace";
-    final String KEYSPACE_UPPER = "MYKEYSPACE";
     createKeyspace(KEYSPACE_LOWER);
     Assert.assertNotNull(mCassandraCluster.getMetadata().getKeyspace(KEYSPACE_LOWER));
     Assert.assertNull(mCassandraCluster.getMetadata().getKeyspace(KEYSPACE_UPPER));
@@ -80,8 +101,6 @@ public class TestKeyspaceCreateAndCheck {
   /** A little bit more worrying! */
   @Test
   public void testKeyspacesDistinct() throws Exception {
-    final String KEYSPACE_LOWER = "mykeyspace";
-    final String KEYSPACE_UPPER = "MYKEYSPACE";
     createKeyspace(KEYSPACE_LOWER);
     createKeyspace(KEYSPACE_UPPER);
     Assert.assertNotEquals(
@@ -93,41 +112,18 @@ public class TestKeyspaceCreateAndCheck {
   /** Check what actually gets created. */
   @Test
   public void testKeyspacesActuallyCreated() throws Exception {
-    final String KEYSPACE_LOWER = "mykeyspace";
-    final String KEYSPACE_UPPER = "MYKEYSPACE";
     createKeyspace(KEYSPACE_LOWER);
-    assert(keyspaceExists(KEYSPACE_LOWER));
+    Assert.assertNotNull(mCassandraCluster.getMetadata().getKeyspace(KEYSPACE_LOWER));
     createKeyspace(KEYSPACE_UPPER);
-    assert(keyspaceExists(KEYSPACE_UPPER));
+    Assert.assertNotNull(mCassandraCluster.getMetadata().getKeyspace(KEYSPACE_UPPER));
 
-  }
-
-  private boolean keyspaceExists(String keyspace) {
-    final Metadata metadata = mCassandraCluster.getMetadata();
-    Preconditions.checkNotNull(metadata);
-
-    LOG.debug("Found these keyspaces:");
-    boolean found = false;
-
-    for (KeyspaceMetadata ksm : metadata.getKeyspaces()) {
-      LOG.debug(String.format("\t%s", ksm.getName()));
-
-      // Sanity check whether the keyspace we are looking for exists.
-      if (ksm.getName().equals(keyspace)) {
-        LOG.debug("Looks like we found it!");
-        Preconditions.checkState(!found);
-        found = true;
-        return true;
-      }
-    }
-    return false;
   }
 
   /**
    * Ensure that the EmbeddedCassandraService for unit tests is running.  If it is not, then start it.
    */
-  @BeforeClass
-  public static void startEmbeddedCassandraServiceIfNotRunningAndOpenSession() throws Exception {
+  @Before
+  public void startEmbeddedCassandraServiceIfNotRunningAndOpenSession() throws Exception {
     try {
       // Use a custom YAML file that specifies different ports from normal for RPC and thrift.
       //File yamlFile = new File(getClass().getResource("/cassandra.yaml").getFile());
@@ -159,6 +155,11 @@ public class TestKeyspaceCreateAndCheck {
     String hostIp = "127.0.0.1";
     int port = 9043;
     mCassandraCluster = Cluster.builder().addContactPoints(hostIp).withPort(port).build();
+  }
+
+  @After
+  public void shutdown() {
+    mCassandraCluster.close();
   }
 
 }
